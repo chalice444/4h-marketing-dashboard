@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  Legend, PieChart, Pie, Cell,
+  Legend, PieChart, Pie, Cell, LabelList,
 } from "recharts";
 import {
   Upload, Map as MapIcon, Users, BarChart3, ChevronLeft, ChevronRight, X, Check,
@@ -1099,7 +1099,10 @@ function AttributeView({ members, questUme, questKom, period, customStart, custo
     const counts = {};
     for (const r of rows) { const v = r.occupation; if (v) counts[v] = (counts[v] || 0) + 1; }
     return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8)
-      .map(([name, value]) => ({ name, value, pct: Math.round(value / n * 100) }));
+      .map(([name, value]) => {
+        const pctValue = Math.round(value / n * 100);
+        return { name, value, pct: pctValue, pctLabel: `${pctValue}%` };
+      });
   }, [rows, n, dataSource]);
 
   // useMemo呼び出し後に空チェック（フックルール違反を避けるため）
@@ -1186,8 +1189,9 @@ function AttributeView({ members, questUme, questKom, period, customStart, custo
               <XAxis type="number" tick={{ fontSize:10,fill:"var(--ink-faint)" }} axisLine={false} tickLine={false} />
               <YAxis type="category" dataKey="name" width={100} tick={{ fontSize:11.5,fill:"var(--ink)" }} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={{ fontSize:12,borderRadius:8 }} formatter={(v, n, p) => [`${v}件 (${p.payload.pct}%)`, "件数"]} />
-              <Bar dataKey="value" fill="var(--teal)" radius={[0,5,5,0]} maxBarSize={18}
-                label={{ position:"right", fontSize:11, fill:"var(--ink-faint)", formatter:(v, _, __, idx) => `${occData[idx]?.pct||0}%` }} />
+              <Bar dataKey="value" fill="var(--teal)" radius={[0,5,5,0]} maxBarSize={18}>
+                <LabelList dataKey="pctLabel" position="right" fontSize={11} fill="var(--ink-faint)" />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
