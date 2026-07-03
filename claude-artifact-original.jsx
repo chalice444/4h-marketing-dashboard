@@ -26,8 +26,8 @@ const MUNI_COORDS = {
   // 世田谷区・狛江市は町名レベル
   "梅丘": [35.6472, 139.6401], "宮坂": [35.6432, 139.6355],
   "経堂": [35.6482, 139.6267], "豪徳寺": [35.6498, 139.6318],
-  "赤堤": [35.6522, 139.6356], "松原": [35.6527, 139.6410],
-  "羽根木": [35.6516, 139.6428], "代田": [35.6522, 139.6446],
+  "赤堤": [35.6522, 139.6356], "松原": [35.6630, 139.6410],
+  "羽根木": [35.6650, 139.6610], "代田": [35.6570, 139.6570],
   "代沢": [35.6551, 139.6500], "太子堂": [35.6594, 139.6528],
   "三宿": [35.6561, 139.6571], "池尻": [35.6557, 139.6628],
   "三軒茶屋": [35.6432, 139.6690], "若林": [35.6467, 139.6570],
@@ -86,6 +86,30 @@ const MUNI_COORDS = {
 
 const CHOME_COORDS = {
   // 世田谷区・梅ヶ丘商圏の町丁目代表点
+  "代田1丁目": [35.6537, 139.6606],
+  "代田2丁目": [35.6576, 139.6617],
+  "代田3丁目": [35.6549, 139.6551],
+  "代田4丁目": [35.6584, 139.6554],
+  "代田5丁目": [35.6608, 139.6627],
+  "代田6丁目": [35.6652, 139.6644],
+  "梅丘1丁目": [35.6556, 139.6515],
+  "梅丘2丁目": [35.6509, 139.6515],
+  "梅丘3丁目": [35.6482, 139.6496],
+  "松原1丁目": [35.6680, 139.6450],
+  "松原2丁目": [35.6688, 139.6506],
+  "松原3丁目": [35.6662, 139.6411],
+  "松原4丁目": [35.6617, 139.6402],
+  "松原5丁目": [35.6639, 139.6534],
+  "松原6丁目": [35.6605, 139.6484],
+  "羽根木1丁目": [35.6646, 139.6610],
+  "羽根木2丁目": [35.6672, 139.6564],
+  "大原1丁目": [35.6692, 139.6660],
+  "大原2丁目": [35.6712, 139.6603],
+  "北沢1丁目": [35.6631, 139.6726],
+  "北沢2丁目": [35.6628, 139.6688],
+  "北沢3丁目": [35.6667, 139.6688],
+  "北沢4丁目": [35.6688, 139.6730],
+  "北沢5丁目": [35.6717, 139.6695],
   "経堂1丁目": [35.6480, 139.6352],
   "経堂2丁目": [35.6514, 139.6317],
   "経堂3丁目": [35.6509, 139.6255],
@@ -104,6 +128,15 @@ const CHOME_COORDS = {
   "桜1丁目": [35.6403, 139.6468],
   "桜2丁目": [35.6388, 139.6422],
   "桜3丁目": [35.6368, 139.6388],
+  "世田谷1丁目": [35.6410, 139.6538],
+  "世田谷2丁目": [35.6390, 139.6500],
+  "世田谷3丁目": [35.6442, 139.6502],
+  "世田谷4丁目": [35.6456, 139.6548],
+  "若林1丁目": [35.6436, 139.6617],
+  "若林2丁目": [35.6491, 139.6630],
+  "若林3丁目": [35.6458, 139.6578],
+  "若林4丁目": [35.6487, 139.6554],
+  "若林5丁目": [35.6522, 139.6572],
   "桜丘1丁目": [35.6421, 139.6366],
   "桜丘2丁目": [35.6400, 139.6324],
   "桜丘3丁目": [35.6364, 139.6325],
@@ -139,7 +172,9 @@ const CHOME_COORDS = {
   "西和泉2丁目": [35.6467, 139.5737],
 };
 
-const MANUAL_GEO_CORRECTIONS = {};
+const MANUAL_GEO_CORRECTIONS = {
+  // 必要に応じて "代田3丁目": { lat: 35.x, lng: 139.x, note: "代表点補正" } の形で追加
+};
 
 const GEO_COORDS = { ...MUNI_COORDS, ...CHOME_COORDS };
 
@@ -226,8 +261,45 @@ function findLongestGeoKey(addressText, table) {
   const normalizedAddress = normalizeAddressText(addressText);
   return Object.keys(table)
     .map(k => ({ raw: k, normalized: normalizeGeoKey(k) }))
-    .filter(k => normalizedAddress.includes(k.normalized))
+    .filter(k => {
+      const idx = normalizedAddress.indexOf(k.normalized);
+      if (idx < 0) return false;
+      const before = normalizedAddress[idx - 1] || "";
+      return !before || /[都道府県市区町村郡]/.test(before);
+    })
     .sort((a, b) => b.normalized.length - a.normalized.length)[0]?.raw || "";
+}
+
+function getCorrectionCoords(value) {
+  if (Array.isArray(value)) return value;
+  if (value && isValidCoord(value.lat, value.lng)) return [Number(value.lat), Number(value.lng)];
+  return null;
+}
+
+function getCorrectionNote(value, fallback) {
+  if (value && !Array.isArray(value) && value.note) return value.note;
+  return fallback;
+}
+
+function getGeoSourceLabel(source) {
+  const labels = {
+    manual_correction: "手動補正",
+    town_chome_match: "町丁目一致",
+    town_match: "町名代表点（概算）",
+    address1_match: "市区町村・住所1一致（概算）",
+    fallback: "判定不可",
+    legacy: "旧データ",
+  };
+  return labels[source] || source || "不明";
+}
+
+function getGeoPrecisionLabel(source, confidence) {
+  if (source === "manual_correction") return "手動補正";
+  if (source === "town_chome_match") return "町丁目一致";
+  if (source === "town_match") return "町名代表点（概算）";
+  if (source === "address1_match") return "住所1一致（概算）";
+  if (confidence === "low" || source === "fallback") return "低信頼度";
+  return "概算";
 }
 
 function resolveMemberGeo(row) {
@@ -239,14 +311,15 @@ function resolveMemberGeo(row) {
 
   const manualKey = findLongestGeoKey(geoAddressText, MANUAL_GEO_CORRECTIONS);
   if (manualKey) {
+    const correction = MANUAL_GEO_CORRECTIONS[manualKey];
     return {
       municipality: manualKey,
-      coords: MANUAL_GEO_CORRECTIONS[manualKey],
+      coords: getCorrectionCoords(correction),
       geoSource: "manual_correction",
       geoKey: manualKey,
       geoAddressText,
       geoConfidence: "high",
-      geoNote: "手動補正",
+      geoNote: getCorrectionNote(correction, "手動補正"),
     };
   }
 
@@ -272,7 +345,7 @@ function resolveMemberGeo(row) {
       geoKey: townFromAddress2,
       geoAddressText,
       geoConfidence: "medium",
-      geoNote: "住所2の町名代表点",
+      geoNote: "住所2の町名代表点（概算）",
     };
   }
 
@@ -285,7 +358,7 @@ function resolveMemberGeo(row) {
       geoKey: townKey,
       geoAddressText,
       geoConfidence: "medium",
-      geoNote: "住所全文の町名代表点",
+      geoNote: "住所全文の町名代表点（概算）",
     };
   }
 
@@ -330,20 +403,25 @@ function getMemberMapGeo(member) {
     "住所2": member.address2 || "",
   });
   const hasNewGeo = Boolean(member.geoKey || member.geoSource || member.geoConfidence);
-  const useSavedCoord = hasSavedCoord && hasNewGeo;
+  const savedIsPrecise = ["manual_correction", "town_chome_match"].includes(member.geoSource);
+  const useSavedCoord = hasSavedCoord && hasNewGeo && savedIsPrecise;
   const fallbackCoord = resolved.coords || (hasSavedCoord ? [Number(member.lat), Number(member.lng)] : null);
   const coords = useSavedCoord ? [Number(member.lat), Number(member.lng)] : fallbackCoord;
-  const key = member.geoKey || resolved.geoKey || member.municipality || "fallback";
+  const source = useSavedCoord ? member.geoSource : (resolved.geoSource || member.geoSource || "legacy");
+  const confidence = useSavedCoord ? member.geoConfidence : (resolved.geoConfidence || member.geoConfidence || (hasSavedCoord ? "medium" : "low"));
+  const key = (useSavedCoord ? member.geoKey : resolved.geoKey) || member.geoKey || member.municipality || "fallback";
 
   return {
     key,
     name: key || member.municipality || "不明",
     lat: coords?.[0] ?? null,
     lng: coords?.[1] ?? null,
-    geoSource: member.geoSource || resolved.geoSource || "legacy",
-    geoConfidence: member.geoConfidence || resolved.geoConfidence || (hasSavedCoord ? "medium" : "low"),
+    geoSource: source,
+    geoSourceLabel: getGeoSourceLabel(source),
+    geoConfidence: confidence,
+    geoPrecisionLabel: getGeoPrecisionLabel(source, confidence),
     geoAddressText: member.geoAddressText || resolved.geoAddressText || normalizeAddressText(member.prefecture, member.address1, member.address2),
-    geoNote: member.geoNote || (hasNewGeo ? "" : `表示時に再判定: ${resolved.geoNote}`),
+    geoNote: useSavedCoord ? member.geoNote : `表示時に再判定: ${resolved.geoNote}`,
     municipality: member.municipality || resolved.municipality || "不明",
   };
 }
@@ -664,8 +742,11 @@ function MapView({ members }) {
           count: 0,
           stores: {},
           geoSources: {},
+          precisionCounts: {},
           municipalities: {},
           lowCount: 0,
+          approximateCount: 0,
+          chomeCount: 0,
         });
       }
       const c = map.get(k);
@@ -673,9 +754,12 @@ function MapView({ members }) {
       c.lngSum += Number(geo.lng);
       c.count++;
       c.stores[m.store] = (c.stores[m.store] || 0) + 1;
-      c.geoSources[geo.geoSource] = (c.geoSources[geo.geoSource] || 0) + 1;
+      c.geoSources[geo.geoSourceLabel] = (c.geoSources[geo.geoSourceLabel] || 0) + 1;
+      c.precisionCounts[geo.geoPrecisionLabel] = (c.precisionCounts[geo.geoPrecisionLabel] || 0) + 1;
       c.municipalities[geo.municipality] = (c.municipalities[geo.municipality] || 0) + 1;
       if (geo.geoConfidence === "low") c.lowCount++;
+      if (geo.geoSource === "town_match" || geo.geoSource === "address1_match") c.approximateCount++;
+      if (geo.geoSource === "town_chome_match") c.chomeCount++;
       c.lat = c.latSum / c.count;
       c.lng = c.lngSum / c.count;
     }
@@ -749,7 +833,13 @@ function MapView({ members }) {
       const r = Math.max(6, Math.min(30, 5 + cl.count * 0.5));
       const storeKey = Object.keys(cl.stores).sort((a, b) => cl.stores[b] - cl.stores[a])[0];
       const color = storeKey && STORES[storeKey] ? STORES[storeKey].color : "#666";
+      const isApproxOnly = cl.approximateCount > 0 && cl.chomeCount === 0 && cl.lowCount === 0;
+      const hasApprox = cl.approximateCount > 0;
       const sourceText = Object.entries(cl.geoSources)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${escapeHtml(k)}: ${v}人`)
+        .join("<br>");
+      const precisionText = Object.entries(cl.precisionCounts)
         .sort((a, b) => b[1] - a[1])
         .map(([k, v]) => `${escapeHtml(k)}: ${v}人`)
         .join("<br>");
@@ -762,14 +852,24 @@ function MapView({ members }) {
         <b>${escapeHtml(cl.name)}</b><br>
         会員数: ${cl.count}人<br>
         geoKey: ${escapeHtml(cl.key)}<br>
+        精度区分: ${escapeHtml(isApproxOnly ? "町名代表点（概算）" : hasApprox ? "町丁目一致＋概算混在" : "町丁目一致")}<br>
+        町丁目一致: ${cl.chomeCount}人<br>
+        町名代表点（概算）: ${cl.approximateCount}人<br>
         low confidence: ${cl.lowCount}人
+        <hr style="border:none;border-top:1px solid #ddd;margin:6px 0">
+        <b>精度内訳</b><br>${precisionText || "—"}
         <hr style="border:none;border-top:1px solid #ddd;margin:6px 0">
         <b>geoSource</b><br>${sourceText || "—"}
         <hr style="border:none;border-top:1px solid #ddd;margin:6px 0">
         <b>municipality</b><br>${municipalityText || "—"}
       `;
       const circle = L.circleMarker([cl.lat, cl.lng], {
-        radius: r, color: "white", fillColor: color, weight: 1.5, fillOpacity: 0.75,
+        radius: r,
+        color: isApproxOnly ? color : "white",
+        fillColor: color,
+        weight: isApproxOnly ? 1.2 : 1.5,
+        fillOpacity: isApproxOnly ? 0.42 : hasApprox ? 0.58 : 0.75,
+        dashArray: isApproxOnly ? "4 3" : null,
       }).bindPopup(popupHtml, { maxWidth: 280 }).addTo(map);
       layersRef.current.push(circle);
     }
@@ -794,17 +894,19 @@ function MapView({ members }) {
         geoAddressText: geo.geoAddressText,
         geoKey: geo.key || "",
         geoSource: geo.geoSource || "legacy",
+        geoSourceLabel: geo.geoSourceLabel || getGeoSourceLabel(geo.geoSource),
         geoConfidence: geo.geoConfidence,
+        geoPrecisionLabel: geo.geoPrecisionLabel || getGeoPrecisionLabel(geo.geoSource, geo.geoConfidence),
         geoNote: geo.geoNote,
       };
     });
     return rows
-      .filter(r => !showLowGeoOnly || r.geoConfidence === "low" || r.geoSource === "fallback" || r.geoSource === "address1_match")
+      .filter(r => !showLowGeoOnly || r.geoConfidence === "low" || r.geoSource === "fallback" || r.geoSource === "address1_match" || r.geoSource === "town_match")
       .slice(0, 80);
   }, [members, showLowGeoOnly]);
   const lowGeoCount = members.filter(m => {
     const geo = getMemberMapGeo(m);
-    return geo.geoConfidence === "low" || geo.geoSource === "fallback" || geo.geoSource === "address1_match";
+    return geo.geoConfidence === "low" || geo.geoSource === "fallback" || geo.geoSource === "address1_match" || geo.geoSource === "town_match";
   }).length;
 
   return (
@@ -856,8 +958,8 @@ function MapView({ members }) {
             </div>
           </div>
           <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
-            <span style={{ fontSize:11.5,color:"var(--ink-faint)" }}>低信頼度 {lowGeoCount}件</span>
-            <Pill active={showLowGeoOnly} onClick={() => setShowLowGeoOnly(true)}>低信頼度のみ</Pill>
+            <span style={{ fontSize:11.5,color:"var(--ink-faint)" }}>概算・低信頼度 {lowGeoCount}件</span>
+            <Pill active={showLowGeoOnly} onClick={() => setShowLowGeoOnly(true)}>概算・低信頼度のみ</Pill>
             <Pill active={!showLowGeoOnly} onClick={() => setShowLowGeoOnly(false)}>全件</Pill>
           </div>
         </div>
@@ -865,7 +967,7 @@ function MapView({ members }) {
           <table className="m4h-table">
             <thead>
               <tr>
-                <th>会員</th><th>住所1</th><th>住所2</th><th>lat</th><th>lng</th><th>municipality</th><th>geoKey</th><th>geoSource</th><th>信頼度</th><th>判定住所</th>
+                <th>会員</th><th>住所1</th><th>住所2</th><th>lat</th><th>lng</th><th>municipality</th><th>geoKey</th><th>geoSource</th><th>精度区分</th><th>信頼度</th><th>判定住所</th>
               </tr>
             </thead>
             <tbody>
@@ -878,7 +980,8 @@ function MapView({ members }) {
                   <td>{isValidCoord(r.lat, r.lng) ? Number(r.lng).toFixed(5) : "—"}</td>
                   <td style={{ textAlign:"left" }}>{r.municipality || "—"}</td>
                   <td style={{ textAlign:"left",fontWeight:700 }}>{r.geoKey || "—"}</td>
-                  <td>{r.geoSource}</td>
+                  <td>{r.geoSourceLabel}</td>
+                  <td>{r.geoPrecisionLabel}</td>
                   <td>
                     <span style={{
                       fontWeight:800,
@@ -888,13 +991,13 @@ function MapView({ members }) {
                   <td style={{ textAlign:"left",maxWidth:260,whiteSpace:"normal" }}>{r.geoAddressText || "—"}</td>
                 </tr>
               )) : (
-                <tr><td colSpan={10} style={{ color:"var(--ink-faint)",padding:18 }}>表示対象の診断データはありません</td></tr>
+                <tr><td colSpan={11} style={{ color:"var(--ink-faint)",padding:18 }}>表示対象の診断データはありません</td></tr>
               )}
             </tbody>
           </table>
         </div>
         <div style={{ fontSize:11,color:"var(--ink-faint)",marginTop:8,lineHeight:1.6 }}>
-          high は町丁目一致、medium は町名代表点、low は住所1フォールバックまたは未一致です。既存取込済みデータは、会員CSVを再取込すると新しい診断情報と座標で更新されます。
+          high は町丁目一致、medium は町名代表点（概算）、low は住所1フォールバックまたは未一致です。既存取込済みデータは、会員CSVを再取込すると新しい診断情報と座標で更新されます。
         </div>
       </div>
     </div>
@@ -1649,9 +1752,9 @@ function ImportView({ data, onUpdate, showToast }) {
               <table className="m4h-table">
                 {preview.type === "members" ? (
                   <>
-                    <thead><tr><th>メンバーID</th><th>氏名</th><th>店舗</th><th>geoKey</th><th>geoSource</th><th>信頼度</th></tr></thead>
+                    <thead><tr><th>メンバーID</th><th>氏名</th><th>店舗</th><th>geoKey</th><th>geoSource</th><th>精度区分</th><th>信頼度</th></tr></thead>
                     <tbody>{preview.sample.map(r => (
-                      <tr key={r.id}><td>{r.id}</td><td style={{ textAlign:"left" }}>{r.name}</td><td><StoreTag store={r.store} /></td><td style={{ textAlign:"left",fontWeight:700 }}>{r.geoKey || r.municipality || "—"}</td><td>{r.geoSource}</td><td>{r.geoConfidence}</td></tr>
+                      <tr key={r.id}><td>{r.id}</td><td style={{ textAlign:"left" }}>{r.name}</td><td><StoreTag store={r.store} /></td><td style={{ textAlign:"left",fontWeight:700 }}>{r.geoKey || r.municipality || "—"}</td><td>{getGeoSourceLabel(r.geoSource)}</td><td>{getGeoPrecisionLabel(r.geoSource, r.geoConfidence)}</td><td>{r.geoConfidence}</td></tr>
                     ))}</tbody>
                   </>
                 ) : (
