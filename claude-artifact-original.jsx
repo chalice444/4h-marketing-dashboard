@@ -317,6 +317,46 @@ function normalizeMuni(address1, address2, row = {}) {
   return resolveMemberGeo({ ...row, "住所1": address1, "住所2": address2 }).municipality;
 }
 
+function isValidCoord(lat, lng) {
+  return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+}
+
+function getMemberMapGeo(member) {
+  const hasSavedCoord = isValidCoord(member.lat, member.lng);
+  const resolved = resolveMemberGeo({
+    "郵便番号": member.postal || "",
+    "都道府県": member.prefecture || "",
+    "住所1": member.address1 || "",
+    "住所2": member.address2 || "",
+  });
+  const hasNewGeo = Boolean(member.geoKey || member.geoSource || member.geoConfidence);
+  const useSavedCoord = hasSavedCoord && hasNewGeo;
+  const fallbackCoord = resolved.coords || (hasSavedCoord ? [Number(member.lat), Number(member.lng)] : null);
+  const coords = useSavedCoord ? [Number(member.lat), Number(member.lng)] : fallbackCoord;
+  const key = member.geoKey || resolved.geoKey || member.municipality || "fallback";
+
+  return {
+    key,
+    name: key || member.municipality || "不明",
+    lat: coords?.[0] ?? null,
+    lng: coords?.[1] ?? null,
+    geoSource: member.geoSource || resolved.geoSource || "legacy",
+    geoConfidence: member.geoConfidence || resolved.geoConfidence || (hasSavedCoord ? "medium" : "low"),
+    geoAddressText: member.geoAddressText || resolved.geoAddressText || normalizeAddressText(member.prefecture, member.address1, member.address2),
+    geoNote: member.geoNote || (hasNewGeo ? "" : `表示時に再判定: ${resolved.geoNote}`),
+    municipality: member.municipality || resolved.municipality || "不明",
+  };
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function normalizeStore(raw) {
   const s = raw || "";
   if (s.includes("梅ヶ丘")) return "梅ヶ丘";
@@ -598,22 +638,46 @@ function MapView({ members }) {
   const [showLowGeoOnly, setShowLowGeoOnly] = useState(true);
 
   const filtered = useMemo(() => {
-    let m = members.filter(r => r.lat && r.lng);
+    let m = members.filter(r => {
+      const geo = getMemberMapGeo(r);
+      return isValidCoord(geo.lat, geo.lng);
+    });
     if (filterStore) m = m.filter(r => r.store === filterStore);
     return m;
   }, [members, filterStore]);
 
-  // 市区町村ごとに集計
+  // geoKey を優先し、表示座標は会員ごとの lat/lng を平均して集計
   const muniClusters = useMemo(() => {
     const map = new Map();
     for (const m of filtered) {
-      const k = m.municipality;
-      const coords = GEO_COORDS[k] || (m.lat && m.lng ? [m.lat, m.lng] : null);
-      if (!coords) continue;
-      if (!map.has(k)) map.set(k, { name: k, lat: coords[0], lng: coords[1], count: 0, stores: {} });
+      const geo = getMemberMapGeo(m);
+      if (!isValidCoord(geo.lat, geo.lng)) continue;
+      const k = geo.key || "fallback";
+      if (!map.has(k)) {
+        map.set(k, {
+          key: k,
+          name: geo.name,
+          lat: Number(geo.lat),
+          lng: Number(geo.lng),
+          latSum: 0,
+          lngSum: 0,
+          count: 0,
+          stores: {},
+          geoSources: {},
+          municipalities: {},
+          lowCount: 0,
+        });
+      }
       const c = map.get(k);
+      c.latSum += Number(geo.lat);
+      c.lngSum += Number(geo.lng);
       c.count++;
       c.stores[m.store] = (c.stores[m.store] || 0) + 1;
+      c.geoSources[geo.geoSource] = (c.geoSources[geo.geoSource] || 0) + 1;
+      c.municipalities[geo.municipality] = (c.municipalities[geo.municipality] || 0) + 1;
+      if (geo.geoConfidence === "low") c.lowCount++;
+      c.lat = c.latSum / c.count;
+      c.lng = c.lngSum / c.count;
     }
     return [...map.values()].sort((a, b) => b.count - a.count);
   }, [filtered]);
@@ -680,37 +744,68 @@ function MapView({ members }) {
       layersRef.current.push(m);
     }
 
-    // 市区町村バブル
+    // 会員分布バブル
     for (const cl of muniClusters) {
       const r = Math.max(6, Math.min(30, 5 + cl.count * 0.5));
       const storeKey = Object.keys(cl.stores).sort((a, b) => cl.stores[b] - cl.stores[a])[0];
       const color = storeKey && STORES[storeKey] ? STORES[storeKey].color : "#666";
+      const sourceText = Object.entries(cl.geoSources)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${escapeHtml(k)}: ${v}人`)
+        .join("<br>");
+      const municipalityText = Object.entries(cl.municipalities)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([k, v]) => `${escapeHtml(k)}: ${v}人`)
+        .join("<br>");
+      const popupHtml = `
+        <b>${escapeHtml(cl.name)}</b><br>
+        会員数: ${cl.count}人<br>
+        geoKey: ${escapeHtml(cl.key)}<br>
+        low confidence: ${cl.lowCount}人
+        <hr style="border:none;border-top:1px solid #ddd;margin:6px 0">
+        <b>geoSource</b><br>${sourceText || "—"}
+        <hr style="border:none;border-top:1px solid #ddd;margin:6px 0">
+        <b>municipality</b><br>${municipalityText || "—"}
+      `;
       const circle = L.circleMarker([cl.lat, cl.lng], {
         radius: r, color: "white", fillColor: color, weight: 1.5, fillOpacity: 0.75,
-      }).bindPopup(`<b>${cl.name}</b><br>会員数: ${cl.count}人`).addTo(map);
+      }).bindPopup(popupHtml, { maxWidth: 280 }).addTo(map);
       layersRef.current.push(circle);
     }
   }, [muniClusters]);
 
-  const totalWithCoords = members.filter(m => m.lat && m.lng).length;
+  const totalWithCoords = members.filter(m => {
+    const geo = getMemberMapGeo(m);
+    return isValidCoord(geo.lat, geo.lng);
+  }).length;
   const coverage = members.length ? Math.round(totalWithCoords / members.length * 100) : 0;
   const geoDiagnostics = useMemo(() => {
-    const rows = members.map(m => ({
-      id: m.id,
-      name: m.name,
-      address1: m.address1,
-      address2: m.address2,
-      geoAddressText: m.geoAddressText || normalizeAddressText(m.prefecture, m.address1, m.address2),
-      geoKey: m.geoKey || m.municipality || "",
-      geoSource: m.geoSource || "legacy",
-      geoConfidence: m.geoConfidence || (m.lat && m.lng ? "medium" : "low"),
-      geoNote: m.geoNote || (m.lat && m.lng ? "旧ロジック取込データ" : "座標なし"),
-    }));
+    const rows = members.map(m => {
+      const geo = getMemberMapGeo(m);
+      return {
+        id: m.id,
+        name: m.name,
+        address1: m.address1,
+        address2: m.address2,
+        lat: geo.lat,
+        lng: geo.lng,
+        municipality: geo.municipality,
+        geoAddressText: geo.geoAddressText,
+        geoKey: geo.key || "",
+        geoSource: geo.geoSource || "legacy",
+        geoConfidence: geo.geoConfidence,
+        geoNote: geo.geoNote,
+      };
+    });
     return rows
       .filter(r => !showLowGeoOnly || r.geoConfidence === "low" || r.geoSource === "fallback" || r.geoSource === "address1_match")
       .slice(0, 80);
   }, [members, showLowGeoOnly]);
-  const lowGeoCount = members.filter(m => (m.geoConfidence || (m.lat && m.lng ? "medium" : "low")) === "low" || m.geoSource === "fallback" || m.geoSource === "address1_match").length;
+  const lowGeoCount = members.filter(m => {
+    const geo = getMemberMapGeo(m);
+    return geo.geoConfidence === "low" || geo.geoSource === "fallback" || geo.geoSource === "address1_match";
+  }).length;
 
   return (
     <div className="m4h-fade" style={{ display:"flex",flexDirection:"column",gap:16 }}>
@@ -770,7 +865,7 @@ function MapView({ members }) {
           <table className="m4h-table">
             <thead>
               <tr>
-                <th>会員</th><th>住所1</th><th>住所2</th><th>判定住所</th><th>geoKey</th><th>geoSource</th><th>信頼度</th>
+                <th>会員</th><th>住所1</th><th>住所2</th><th>lat</th><th>lng</th><th>municipality</th><th>geoKey</th><th>geoSource</th><th>信頼度</th><th>判定住所</th>
               </tr>
             </thead>
             <tbody>
@@ -779,7 +874,9 @@ function MapView({ members }) {
                   <td style={{ textAlign:"left" }}>{r.name || r.id || "—"}</td>
                   <td style={{ textAlign:"left" }}>{r.address1 || "—"}</td>
                   <td style={{ textAlign:"left" }}>{r.address2 || "—"}</td>
-                  <td style={{ textAlign:"left",maxWidth:260,whiteSpace:"normal" }}>{r.geoAddressText || "—"}</td>
+                  <td>{isValidCoord(r.lat, r.lng) ? Number(r.lat).toFixed(5) : "—"}</td>
+                  <td>{isValidCoord(r.lat, r.lng) ? Number(r.lng).toFixed(5) : "—"}</td>
+                  <td style={{ textAlign:"left" }}>{r.municipality || "—"}</td>
                   <td style={{ textAlign:"left",fontWeight:700 }}>{r.geoKey || "—"}</td>
                   <td>{r.geoSource}</td>
                   <td>
@@ -788,9 +885,10 @@ function MapView({ members }) {
                       color: r.geoConfidence === "high" ? "var(--go)" : r.geoConfidence === "medium" ? "var(--amber)" : "var(--bad)",
                     }}>{r.geoConfidence}</span>
                   </td>
+                  <td style={{ textAlign:"left",maxWidth:260,whiteSpace:"normal" }}>{r.geoAddressText || "—"}</td>
                 </tr>
               )) : (
-                <tr><td colSpan={7} style={{ color:"var(--ink-faint)",padding:18 }}>表示対象の診断データはありません</td></tr>
+                <tr><td colSpan={10} style={{ color:"var(--ink-faint)",padding:18 }}>表示対象の診断データはありません</td></tr>
               )}
             </tbody>
           </table>
