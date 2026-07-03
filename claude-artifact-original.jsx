@@ -50,6 +50,7 @@ const MUNI_COORDS = {
   "元和泉": [35.6297, 139.5838], "和泉本町": [35.6386, 139.5789],
   "駒井町": [35.6342, 139.5798], "猪方": [35.6247, 139.5789],
   "岩戸北": [35.6368, 139.5848], "岩戸南": [35.6315, 139.5858],
+  "東和泉": [35.6264, 139.5758], "西和泉": [35.6460, 139.5754],
   "西野川": [35.6298, 139.5709], "東野川": [35.6317, 139.5747],
   "中和泉": [35.6418, 139.5832], "小足立": [35.6255, 139.5862],
   // 他市区町村 フォールバック
@@ -82,6 +83,65 @@ const MUNI_COORDS = {
   "川崎市": [35.5308, 139.7023],
   "横浜市": [35.4437, 139.6380],
 };
+
+const CHOME_COORDS = {
+  // 世田谷区・梅ヶ丘商圏の町丁目代表点
+  "経堂1丁目": [35.6480, 139.6352],
+  "経堂2丁目": [35.6514, 139.6317],
+  "経堂3丁目": [35.6509, 139.6255],
+  "経堂4丁目": [35.6474, 139.6222],
+  "経堂5丁目": [35.6450, 139.6292],
+  "宮坂1丁目": [35.6450, 139.6390],
+  "宮坂2丁目": [35.6481, 139.6370],
+  "宮坂3丁目": [35.6511, 139.6334],
+  "豪徳寺1丁目": [35.6510, 139.6450],
+  "豪徳寺2丁目": [35.6484, 139.6432],
+  "赤堤1丁目": [35.6537, 139.6391],
+  "赤堤2丁目": [35.6552, 139.6440],
+  "赤堤3丁目": [35.6573, 139.6378],
+  "赤堤4丁目": [35.6602, 139.6332],
+  "赤堤5丁目": [35.6640, 139.6302],
+  "桜1丁目": [35.6403, 139.6468],
+  "桜2丁目": [35.6388, 139.6422],
+  "桜3丁目": [35.6368, 139.6388],
+  "桜丘1丁目": [35.6421, 139.6366],
+  "桜丘2丁目": [35.6400, 139.6324],
+  "桜丘3丁目": [35.6364, 139.6325],
+  "桜丘4丁目": [35.6330, 139.6308],
+  "桜丘5丁目": [35.6385, 139.6262],
+  "船橋1丁目": [35.6492, 139.6230],
+  "船橋2丁目": [35.6519, 139.6168],
+  "船橋3丁目": [35.6462, 139.6165],
+  "船橋4丁目": [35.6415, 139.6170],
+  "船橋5丁目": [35.6462, 139.6225],
+  // 狛江商圏の町丁目代表点
+  "岩戸北1丁目": [35.6389, 139.5827],
+  "岩戸北2丁目": [35.6373, 139.5868],
+  "岩戸北3丁目": [35.6354, 139.5870],
+  "岩戸北4丁目": [35.6336, 139.5872],
+  "岩戸南1丁目": [35.6322, 139.5840],
+  "岩戸南2丁目": [35.6299, 139.5845],
+  "岩戸南3丁目": [35.6281, 139.5864],
+  "岩戸南4丁目": [35.6257, 139.5865],
+  "東和泉1丁目": [35.6302, 139.5771],
+  "東和泉2丁目": [35.6274, 139.5780],
+  "東和泉3丁目": [35.6250, 139.5754],
+  "東和泉4丁目": [35.6231, 139.5727],
+  "元和泉1丁目": [35.6305, 139.5789],
+  "元和泉2丁目": [35.6325, 139.5818],
+  "元和泉3丁目": [35.6277, 139.5836],
+  "中和泉1丁目": [35.6372, 139.5775],
+  "中和泉2丁目": [35.6399, 139.5787],
+  "中和泉3丁目": [35.6418, 139.5807],
+  "中和泉4丁目": [35.6428, 139.5843],
+  "中和泉5丁目": [35.6444, 139.5888],
+  "西和泉1丁目": [35.6454, 139.5768],
+  "西和泉2丁目": [35.6467, 139.5737],
+};
+
+const MANUAL_GEO_CORRECTIONS = {};
+
+const GEO_COORDS = { ...MUNI_COORDS, ...CHOME_COORDS };
 
 const DIST_BANDS = [
   { label: "〜1km",  max: 1 },
@@ -137,21 +197,124 @@ function getDistBand(distKm) {
   return "5km超";
 }
 
+function normalizeAddressText(...parts) {
+  return parts
+    .filter(Boolean)
+    .join("")
+    .normalize("NFKC")
+    .replace(/[‐‑‒–—―ーｰ－]/g, "-")
+    .replace(/[ 　\t\r\n]/g, "")
+    .replace(/(\d+)丁目/g, "$1丁目")
+    .replace(/(\d+)-/g, "$1丁目")
+    .trim();
+}
+
+function normalizeGeoKey(key) {
+  return normalizeAddressText(key);
+}
+
 function extractTown(address2) {
   if (!address2) return "";
-  const m = address2.trim().match(/^([^\d\-ー]+)/);
-  return m ? m[1].trim() : "";
+  const s = normalizeAddressText(address2);
+  const chome = s.match(/^(.+?\d+丁目)/);
+  if (chome) return chome[1];
+  const town = s.match(/^([^0-9\-番号]+?)(?:\d+丁目|\d+|番|号|-|$)/);
+  return town ? town[1].trim() : "";
 }
-function normalizeMuni(address1, address2) {
-  const town = extractTown(address2 || "");
-  if (town && MUNI_COORDS[town]) return town;
-  if (!address1) return "不明";
-  const s = address1.trim();
-  // Try direct match first
-  if (MUNI_COORDS[s]) return s;
-  // Try partial match (e.g., 川崎市多摩区 → matches 川崎市多摩区)
-  const found = Object.keys(MUNI_COORDS).find(k => s.startsWith(k) || k.startsWith(s));
-  return found || s;
+
+function findLongestGeoKey(addressText, table) {
+  const normalizedAddress = normalizeAddressText(addressText);
+  return Object.keys(table)
+    .map(k => ({ raw: k, normalized: normalizeGeoKey(k) }))
+    .filter(k => normalizedAddress.includes(k.normalized))
+    .sort((a, b) => b.normalized.length - a.normalized.length)[0]?.raw || "";
+}
+
+function resolveMemberGeo(row) {
+  const postal = row["郵便番号"] || "";
+  const prefecture = row["都道府県"] || "";
+  const address1 = (row["住所1"] || "").trim();
+  const address2 = (row["住所2"] || "").trim();
+  const geoAddressText = normalizeAddressText(prefecture, address1, address2);
+
+  const manualKey = findLongestGeoKey(geoAddressText, MANUAL_GEO_CORRECTIONS);
+  if (manualKey) {
+    return {
+      municipality: manualKey,
+      coords: MANUAL_GEO_CORRECTIONS[manualKey],
+      geoSource: "manual_correction",
+      geoKey: manualKey,
+      geoAddressText,
+      geoConfidence: "high",
+      geoNote: "手動補正",
+    };
+  }
+
+  const chomeKey = findLongestGeoKey(geoAddressText, CHOME_COORDS);
+  if (chomeKey) {
+    return {
+      municipality: chomeKey,
+      coords: CHOME_COORDS[chomeKey],
+      geoSource: "town_chome_match",
+      geoKey: chomeKey,
+      geoAddressText,
+      geoConfidence: "high",
+      geoNote: "町丁目一致",
+    };
+  }
+
+  const townFromAddress2 = extractTown(address2);
+  if (townFromAddress2 && MUNI_COORDS[townFromAddress2]) {
+    return {
+      municipality: townFromAddress2,
+      coords: MUNI_COORDS[townFromAddress2],
+      geoSource: "town_match",
+      geoKey: townFromAddress2,
+      geoAddressText,
+      geoConfidence: "medium",
+      geoNote: "住所2の町名代表点",
+    };
+  }
+
+  const townKey = findLongestGeoKey(geoAddressText, MUNI_COORDS);
+  if (townKey) {
+    return {
+      municipality: townKey,
+      coords: MUNI_COORDS[townKey],
+      geoSource: "town_match",
+      geoKey: townKey,
+      geoAddressText,
+      geoConfidence: "medium",
+      geoNote: "住所全文の町名代表点",
+    };
+  }
+
+  const address1Key = findLongestGeoKey(address1, MUNI_COORDS);
+  if (address1Key) {
+    return {
+      municipality: address1Key,
+      coords: MUNI_COORDS[address1Key],
+      geoSource: "address1_match",
+      geoKey: address1Key,
+      geoAddressText,
+      geoConfidence: "low",
+      geoNote: "住所1フォールバック",
+    };
+  }
+
+  return {
+    municipality: address1 || "不明",
+    coords: null,
+    geoSource: "fallback",
+    geoKey: "",
+    geoAddressText,
+    geoConfidence: "low",
+    geoNote: postal ? "座標テーブル未一致（郵便番号は保存のみ）" : "座標テーブル未一致",
+  };
+}
+
+function normalizeMuni(address1, address2, row = {}) {
+  return resolveMemberGeo({ ...row, "住所1": address1, "住所2": address2 }).municipality;
 }
 
 function normalizeStore(raw) {
@@ -188,8 +351,9 @@ const num = (n) => n == null ? "—" : Math.round(n).toLocaleString("ja-JP");
 function parseML009Row(row) {
   const address1 = (row["住所1"] || "").trim();
   const address2 = (row["住所2"] || "").trim();
-  const municipality = normalizeMuni(address1, address2);
-  const coords = MUNI_COORDS[municipality];
+  const geo = resolveMemberGeo(row);
+  const municipality = geo.municipality;
+  const coords = geo.coords;
   const store = normalizeStore(row["メンバー所属店舗名"] || row["所属店舗名"] || "");
   const gender = row["性別"] === "男性" ? "男性" : row["性別"] === "女性" ? "女性" : "不明";
   const age = parseInt(row["年齢"]) || null;
@@ -210,6 +374,11 @@ function parseML009Row(row) {
     isActive: !planEnd,
     municipality,
     lat: coords?.[0] ?? null, lng: coords?.[1] ?? null,
+    geoSource: geo.geoSource,
+    geoKey: geo.geoKey,
+    geoAddressText: geo.geoAddressText,
+    geoConfidence: geo.geoConfidence,
+    geoNote: geo.geoNote,
     distUme, distKom,
     distBandUme: getDistBand(distUme), distBandKom: getDistBand(distKom),
   };
@@ -426,6 +595,7 @@ function MapView({ members }) {
   const layersRef = useRef([]);
   const [loading, setLoading] = useState(true);
   const [filterStore, setFilterStore] = useState("");
+  const [showLowGeoOnly, setShowLowGeoOnly] = useState(true);
 
   const filtered = useMemo(() => {
     let m = members.filter(r => r.lat && r.lng);
@@ -438,7 +608,7 @@ function MapView({ members }) {
     const map = new Map();
     for (const m of filtered) {
       const k = m.municipality;
-      const coords = MUNI_COORDS[k];
+      const coords = GEO_COORDS[k] || (m.lat && m.lng ? [m.lat, m.lng] : null);
       if (!coords) continue;
       if (!map.has(k)) map.set(k, { name: k, lat: coords[0], lng: coords[1], count: 0, stores: {} });
       const c = map.get(k);
@@ -524,6 +694,23 @@ function MapView({ members }) {
 
   const totalWithCoords = members.filter(m => m.lat && m.lng).length;
   const coverage = members.length ? Math.round(totalWithCoords / members.length * 100) : 0;
+  const geoDiagnostics = useMemo(() => {
+    const rows = members.map(m => ({
+      id: m.id,
+      name: m.name,
+      address1: m.address1,
+      address2: m.address2,
+      geoAddressText: m.geoAddressText || normalizeAddressText(m.prefecture, m.address1, m.address2),
+      geoKey: m.geoKey || m.municipality || "",
+      geoSource: m.geoSource || "legacy",
+      geoConfidence: m.geoConfidence || (m.lat && m.lng ? "medium" : "low"),
+      geoNote: m.geoNote || (m.lat && m.lng ? "旧ロジック取込データ" : "座標なし"),
+    }));
+    return rows
+      .filter(r => !showLowGeoOnly || r.geoConfidence === "low" || r.geoSource === "fallback" || r.geoSource === "address1_match")
+      .slice(0, 80);
+  }, [members, showLowGeoOnly]);
+  const lowGeoCount = members.filter(m => (m.geoConfidence || (m.lat && m.lng ? "medium" : "low")) === "low" || m.geoSource === "fallback" || m.geoSource === "address1_match").length;
 
   return (
     <div className="m4h-fade" style={{ display:"flex",flexDirection:"column",gap:16 }}>
@@ -563,6 +750,53 @@ function MapView({ members }) {
             </span>
           </div>
           <div style={{ fontSize:11,color:"var(--ink-faint)" }}>地図表示 {totalWithCoords}/{members.length}人（{coverage}%）</div>
+        </div>
+      </div>
+      <div className="m4h-card" style={{ padding:18 }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10 }}>
+          <div>
+            <div style={{ fontWeight:800,fontSize:14 }}>座標診断</div>
+            <div style={{ fontSize:11.5,color:"var(--ink-faint)",marginTop:3 }}>
+              会員CSV取込時に、住所全文からどのキーで代表座標を決めたかを確認できます。
+            </div>
+          </div>
+          <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
+            <span style={{ fontSize:11.5,color:"var(--ink-faint)" }}>低信頼度 {lowGeoCount}件</span>
+            <Pill active={showLowGeoOnly} onClick={() => setShowLowGeoOnly(true)}>低信頼度のみ</Pill>
+            <Pill active={!showLowGeoOnly} onClick={() => setShowLowGeoOnly(false)}>全件</Pill>
+          </div>
+        </div>
+        <div className="m4h-scroll" style={{ maxHeight:260,border:"1px solid var(--border-soft)",borderRadius:8 }}>
+          <table className="m4h-table">
+            <thead>
+              <tr>
+                <th>会員</th><th>住所1</th><th>住所2</th><th>判定住所</th><th>geoKey</th><th>geoSource</th><th>信頼度</th>
+              </tr>
+            </thead>
+            <tbody>
+              {geoDiagnostics.length ? geoDiagnostics.map(r => (
+                <tr key={`${r.id}-${r.geoKey}-${r.geoSource}`}>
+                  <td style={{ textAlign:"left" }}>{r.name || r.id || "—"}</td>
+                  <td style={{ textAlign:"left" }}>{r.address1 || "—"}</td>
+                  <td style={{ textAlign:"left" }}>{r.address2 || "—"}</td>
+                  <td style={{ textAlign:"left",maxWidth:260,whiteSpace:"normal" }}>{r.geoAddressText || "—"}</td>
+                  <td style={{ textAlign:"left",fontWeight:700 }}>{r.geoKey || "—"}</td>
+                  <td>{r.geoSource}</td>
+                  <td>
+                    <span style={{
+                      fontWeight:800,
+                      color: r.geoConfidence === "high" ? "var(--go)" : r.geoConfidence === "medium" ? "var(--amber)" : "var(--bad)",
+                    }}>{r.geoConfidence}</span>
+                  </td>
+                </tr>
+              )) : (
+                <tr><td colSpan={7} style={{ color:"var(--ink-faint)",padding:18 }}>表示対象の診断データはありません</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ fontSize:11,color:"var(--ink-faint)",marginTop:8,lineHeight:1.6 }}>
+          high は町丁目一致、medium は町名代表点、low は住所1フォールバックまたは未一致です。既存取込済みデータは、会員CSVを再取込すると新しい診断情報と座標で更新されます。
         </div>
       </div>
     </div>
@@ -1310,16 +1544,16 @@ function ImportView({ data, onUpdate, showToast }) {
               <span>検出 <b className="num">{preview.count}</b>件</span>
               {preview.store && <StoreTag store={preview.store} />}
               <span style={{ color:"var(--ink-faint)",fontSize:12 }}>
-                {preview.type === "members" ? "住所から市区町村・距離を自動計算します" : "認知経路・入会動機・属性が集計されます"}
+                {preview.type === "members" ? "住所全文から町丁目・町名代表点と距離を自動計算します" : "認知経路・入会動機・属性が集計されます"}
               </span>
             </div>
             <div className="m4h-scroll" style={{ maxHeight:200,border:"1px solid var(--border-soft)",borderRadius:8,marginBottom:12 }}>
               <table className="m4h-table">
                 {preview.type === "members" ? (
                   <>
-                    <thead><tr><th>メンバーID</th><th>氏名</th><th>店舗</th><th>市区町村</th><th>年齢</th><th>性別</th></tr></thead>
+                    <thead><tr><th>メンバーID</th><th>氏名</th><th>店舗</th><th>geoKey</th><th>geoSource</th><th>信頼度</th></tr></thead>
                     <tbody>{preview.sample.map(r => (
-                      <tr key={r.id}><td>{r.id}</td><td style={{ textAlign:"left" }}>{r.name}</td><td><StoreTag store={r.store} /></td><td style={{ textAlign:"left" }}>{r.municipality}</td><td>{r.age}</td><td>{r.gender}</td></tr>
+                      <tr key={r.id}><td>{r.id}</td><td style={{ textAlign:"left" }}>{r.name}</td><td><StoreTag store={r.store} /></td><td style={{ textAlign:"left",fontWeight:700 }}>{r.geoKey || r.municipality || "—"}</td><td>{r.geoSource}</td><td>{r.geoConfidence}</td></tr>
                     ))}</tbody>
                   </>
                 ) : (
